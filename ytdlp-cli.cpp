@@ -10,6 +10,7 @@
 #include <fstream>
 #include <algorithm>
 #include <string_view>
+#include <regex>
 
 #include <limits.h>
 
@@ -23,6 +24,8 @@ namespace Constants {
         {"Website and ID", "%(webpage_url_domain)s - %(id)s.%(ext)s"},
         {"Custom", ".%(ext)s"}
     };
+    const std::string noConfigMsg {"<< OPTION NOT YET CONFIGURED >>"};
+    const std::regex linkRegex {"[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b[-a-zA-Z0-9()@:%_\\+.~#?&\\/=]\\S*$"};
 }
 
 /**
@@ -41,8 +44,29 @@ namespace GeneralUtils {
         std::cout << ">> [PROMPT] " + message + " " << std::flush;
     }
 
+    std::pair<std::string, std::string> makeStringPair(const std::string& str1, const std::string& str2) {
+        return std::move(std::pair<std::string, std::string>{str1, str2});
+    }
+    std::string pairListToString(
+        const std::string& head_message, 
+        const std::vector<std::pair<std::string, std::string>>& list,
+        const std::string& default_message
+    ) {
+        std::string out {};
+        out += ":: " + head_message + " ::\n";
+        for (const std::pair<std::string, std::string> pair : list) {
+            out += "\t|--> " + (!pair.first.empty() ? pair.first : default_message) + " = " + (!pair.second.empty() ? pair.second : default_message) + "\n";
+        }
+        out += "\t|-------------------------";
+        return std::move(out);
+    }
+
     bool isValidFile(const std::string& path) {
         return std::filesystem::is_regular_file(path);
+    }
+
+    bool isValidDirectory(const std::string& path) {
+        return std::filesystem::is_directory(path);
     }
 
     void resetInputStream() {
@@ -68,21 +92,96 @@ namespace GeneralUtils {
         transform(in.begin(), in.end(), in.begin(), [](unsigned char ch){return std::tolower(ch);});
     }
 
-    void askInput(const std::string& message, std::string& str, bool toLower = false) {
-        printPrompt(message);
+    void stringStrip(std::string& str) {
+        const auto whitespaces {" \t\n"};
+
+        const auto strBegin = str.find_first_not_of(whitespaces);
+        if (strBegin == std::string::npos) {
+            str = "";
+            return;
+        }
+
+        const auto strEnd = str.find_last_not_of(whitespaces);
+        const auto substrSize = strEnd - strBegin + 1;
+        str = std::move(str.substr(strBegin, substrSize));
+    }
+
+    enum class InputPostProcess {
+        NONE,
+        TO_LOWER,
+        STRIP,
+    };
+
+    void askInput(const std::string& prompt, std::string& str, const std::vector<InputPostProcess>& postProcessList = {}) {
+        printPrompt(prompt);
         std::getline(std::cin, str);
-        if (toLower) stringToLowerInPlace(str);
+        for (InputPostProcess i : postProcessList) {
+            switch (i) {
+                case InputPostProcess::TO_LOWER:
+                    stringToLowerInPlace(str);
+                    break;
+                case InputPostProcess::STRIP:
+                    stringStrip(str);
+                    break;
+                default:
+                    printError("Unexpected non-fatal error: Unhandled input post-processing request.");
+                    break;
+            }
+        }
         std::cin.clear();
     }
 
-    void askInput(const std::string& message, char& ch, bool toLower = false) {
-        printPrompt(message);
+    void askInput(const std::string& prompt, char& ch, bool toLower = false) {
+        printPrompt(prompt);
         std::cin.get(ch);
         if (toLower) ch = std::tolower(static_cast<unsigned char>(ch));
         if (ch != '\n') 
             resetInputStream();
         else 
             std::cin.clear();
+    }
+
+    void askInputWithCheck(
+        std::string& dest, 
+        const std::string& prompt,
+        bool (*const validatorFcn)(const std::string&),
+        const std::string& messageIfInvalid,
+        const std::string& messageIfEmpty,
+        const std::vector<InputPostProcess>& postProcessList = {}
+    ) {
+        while (true) {
+            GeneralUtils:;askInput(prompt, dest, postProcessList);
+            if (std::cin.fail()) {
+                GeneralUtils::printError("Input failed!");
+                GeneralUtils::resetInputStream();
+                continue;
+            }
+            if (!messageIfEmpty.empty() && dest.empty()) {
+                GeneralUtils::printError(messageIfEmpty);
+                continue;
+            }
+            if (!messageIfInvalid.empty() && validatorFcn(dest)) return;
+            GeneralUtils::printError(messageIfInvalid);
+        }
+    }
+
+    void askInputWithCheck(
+        char& dest, 
+        const std::string& prompt,
+        bool (*const validatorFcn)(char&),
+        const std::string& messageIfInvalid,
+        bool toLower = false
+    ) {
+        while (true) {
+            GeneralUtils:;askInput(prompt, dest, toLower);
+            if (std::cin.fail()) {
+                GeneralUtils::printError("Input failed!");
+                GeneralUtils::resetInputStream();
+                continue;
+            }
+            if (!messageIfInvalid.empty() && validatorFcn(dest)) return;
+            GeneralUtils::printError(messageIfInvalid);
+        }
     }
 }
 
@@ -172,7 +271,7 @@ public:
 
             const std::string& key {line.substr(0,delimIndex)};
             const std::string& value {line.substr(delimIndex+1)};
-            if (!key.length() || !value.length()) continue;
+            if (key.empty() || value.empty()) continue;
             
             if (key == ConfigUtils::getKeyword(ConfigUtils::configKeyword::YTDLP_PATH))
                 ytdlpPath = value;
@@ -193,11 +292,15 @@ public:
     bool setYtdlpPath(std::string& newPath) {
         if (!GeneralUtils::isValidFile(newPath)) return false;
         this->m_ytdlpPath = newPath;
+        GeneralUtils::printLog("Updated yt-dlp path.");
         return true;
     }
 
     bool ytdlpIsExecutable() {return this->m_ytdlpIsExecutable;}
-    void setYtdlpIsExecutable(bool newVal) {this->m_ytdlpIsExecutable = newVal;}
+    void setYtdlpIsExecutable(bool newVal) {
+        this->m_ytdlpIsExecutable = newVal;
+        GeneralUtils::printLog("Updated yt-dlp file information.");
+    }
 
     /**
      * General utility methods
@@ -212,10 +315,14 @@ public:
      */
 
     friend std::ostream& operator<<(std::ostream& out, const LoadedConfig& config) {
-        out << "LOADED CONFIGURATION:\n" 
-            << "\t|--> " << ConfigUtils::configKeywordStrings[0] << " = " << config.m_ytdlpPath << "\n"
-            << "\t|--> " << ConfigUtils::configKeywordStrings[1] << " = " << (config.m_ytdlpIsExecutable ? "true" : "false") << "\n"
-            << "\t|-------------------------";
+        out << GeneralUtils::pairListToString(
+            "LOADED CONFIGURATION",
+            std::vector<std::pair<std::string, std::string>> {
+                GeneralUtils::makeStringPair(ConfigUtils::configKeywordStrings[0], config.m_ytdlpPath),
+                GeneralUtils::makeStringPair(ConfigUtils::configKeywordStrings[1], (config.m_ytdlpIsExecutable ? "true" : "false")),
+            },
+            Constants::noConfigMsg
+        );
         return out;
     }
 };
@@ -271,6 +378,37 @@ struct Session {
      * General utility methods
      */
 
+    void setSessionMode(char sessionMode) {
+        switch (sessionMode) {
+            case 'f':
+                this->sessionMode = SessionMode::FAST;
+                break;
+            default:
+                this->sessionMode = SessionMode::INTERACTIVE;
+                break;
+        }
+        GeneralUtils::printLog("Updated session mode.");
+    }
+
+    bool setInputLink(const std::string& inputLink) {
+        std::smatch match {};
+        if (!std::regex_search(inputLink, match, Constants::linkRegex))
+            return false;
+        this->inputLink = inputLink;
+        GeneralUtils::printLog("Updated link.");
+        return true;
+    }
+
+    void setOutputDirectory(const std::string& outputDirectory) {
+        this->outputDirectory = outputDirectory;
+        GeneralUtils::printLog("Updated output directory.");
+
+        // if (!GeneralUtils::isValidDirectory(outputDirectory)) return false;
+        // this->outputDirectory = outputDirectory;
+        // GeneralUtils::printLog("Updated output directory.");
+        // return true;
+    }
+
     void printSession() {
         GeneralUtils::printLog(GeneralUtils::toString(*this));
     }
@@ -280,16 +418,18 @@ struct Session {
      */
 
     friend std::ostream& operator<<(std::ostream& out, const Session& session) {
-        const auto printShowEmpty {[](const std::string& str){return str.length() ? str : "NOT YET CONFIGURED";}};
-
-        out << "CURRENT SESSION DETAILS:\n" 
-            << "\t|--> " << "Mode" << " = " << session.sessionMode << "\n"
-            << "\t|--> " << "Input Link" << " = " << printShowEmpty(session.inputLink) << "\n"
-            << "\t|--> " << "Output Directory" << " = " << printShowEmpty(session.outputDirectory) << "\n"
-            << "\t|--> " << "Output Filename" << " = " << printShowEmpty(session.outputFilename) << "\n"
-            << "\t|--> " << "Download Mode" << " = " << session.downloadMode << "\n"
-            << "\t|--> " << "Download Options" << " = " << printShowEmpty(session.downloadModeOptions) << "\n"
-            << "\t|-------------------------";
+        out << GeneralUtils::pairListToString(
+            "CURRENT SESSION INFORMATION",
+            std::vector<std::pair<std::string, std::string>> {
+                GeneralUtils::makeStringPair("Mode", GeneralUtils::toString(session.sessionMode)),
+                GeneralUtils::makeStringPair("Input Link", session.inputLink),
+                GeneralUtils::makeStringPair("Output Directory", session.outputDirectory),
+                GeneralUtils::makeStringPair("Output Filename", session.outputFilename),
+                GeneralUtils::makeStringPair("Download Mode", GeneralUtils::toString(session.downloadMode)),
+                GeneralUtils::makeStringPair("Download Options", session.downloadModeOptions),
+            },
+            Constants::noConfigMsg
+        );
         return out;
     }
 
@@ -302,7 +442,7 @@ struct Session {
                 out << "AS VIDEO";
                 break;
             default:
-                out << "NOT YET CONFIGURED";
+                out << Constants::noConfigMsg;
                 break;
         }
         return out;
@@ -317,7 +457,7 @@ struct Session {
                 out << "FAST MODE";
                 break;
             default:
-                out << "NOT YET CONFIGURED";
+                out << Constants::noConfigMsg;
                 break;
         }
         return out;
@@ -334,22 +474,21 @@ void promptValidYtdlpPath(LoadedConfig &config) {
     
     std::string newPath {};
     while (true) {
-        GeneralUtils::askInput("Input new path: ", newPath);
-        if (std::cin.fail() || newPath.length() >= PATH_MAX) {
-            GeneralUtils::printError("Input failed! Try again.");
+        GeneralUtils::askInput("Input new path:", newPath);
+        if (std::cin.fail()) {
+            GeneralUtils::printError("Input failed!");
             GeneralUtils::resetInputStream();
             continue;
         }
-        if (config.setYtdlpPath(newPath)) break;
-        GeneralUtils::printError("Invalid path! Try again.");
+        if (newPath.length() < PATH_MAX && config.setYtdlpPath(newPath)) break;
+        GeneralUtils::printError("Invalid path!");
     }
-    GeneralUtils::printLog("Updated yt-dlp path.");
     
     char isExecutableChar {};
     while (true) {
-        GeneralUtils::askInput("Is executable (Y / N[default])? ", isExecutableChar, true);
+        GeneralUtils::askInput("Is executable (Y / N[default])?", isExecutableChar, true);
         if (std::cin.fail()) {
-            GeneralUtils::printError("Input failed! Try again.");
+            GeneralUtils::printError("Input failed!");
             GeneralUtils::resetInputStream();
             continue;
         }
@@ -357,15 +496,84 @@ void promptValidYtdlpPath(LoadedConfig &config) {
         config.setYtdlpIsExecutable(isExecutableChar == 'y');
         break;
     }
-    GeneralUtils::printLog("Updated yt-dlp file information.");
     
     config.printConfig();
 }
 
 void promptSessionMode(Session& session) {
     char sessionMode {};
-    GeneralUtils::askInput("Would you like to enter interactive mode (I)[default] or continuous mode (F)?", sessionMode, true);
-    session.sessionMode = sessionMode != 'f' ? Session::SessionMode::INTERACTIVE : Session::SessionMode::FAST;
+    GeneralUtils::askInput("Would you like to enter interactive mode (I)[default] or fast mode (F)?", sessionMode, true);
+    if (std::cin.fail()) {
+        GeneralUtils::printError("Input failed! Setting to default.");
+        GeneralUtils::resetInputStream();
+        sessionMode = '\n';
+    }
+    session.setSessionMode(sessionMode);
+}
+
+void promptInputLink(Session& session) {
+    std::string inputLink {};
+    while (true) {
+        GeneralUtils::askInput("Input link:", inputLink, {GeneralUtils::InputPostProcess::STRIP});
+        if (std::cin.fail()) {
+            GeneralUtils::printError("Input failed!");
+            GeneralUtils::resetInputStream();
+            continue;
+        }
+
+        if (inputLink.empty()) {
+            GeneralUtils::printError("Empty link!");
+            continue;
+        }
+        if (session.setInputLink(inputLink)) break;
+        GeneralUtils::printError("Invalid link!");
+    }
+    session.printSession();
+}
+
+// void promptOutput(Session& session) {
+//     std::string outputDirectory {};
+//     while (true) {
+//         GeneralUtils::askInput("Input target directory:", outputDirectory, {GeneralUtils::InputPostProcess::STRIP});
+//         if (std::cin.fail()) {
+//             GeneralUtils::printError("Input failed!");
+//             GeneralUtils::resetInputStream();
+//             continue;
+//         }
+//         if (outputDirectory.empty()) {
+//             GeneralUtils::printError("Empty path!");
+//             continue;
+//         }
+//         if (session.setOutputDirectory(outputDirectory)) break;
+//         GeneralUtils::printError("Invalid path!");
+//     }
+//     session.printSession();
+// }
+void promptOutput(Session& session) {
+    std::string outputDirectory {};
+    GeneralUtils::askInputWithCheck(
+        outputDirectory,
+        "Input target directory:",
+        &GeneralUtils::isValidDirectory,
+        "Invalid path!",
+        "Empty path!",
+        {GeneralUtils::InputPostProcess::STRIP}
+    );
+    session.setOutputDirectory(outputDirectory);
+    // while (true) {
+    //     GeneralUtils::askInput("Input target directory:", outputDirectory, {GeneralUtils::InputPostProcess::STRIP});
+    //     if (std::cin.fail()) {
+    //         GeneralUtils::printError("Input failed!");
+    //         GeneralUtils::resetInputStream();
+    //         continue;
+    //     }
+    //     if (outputDirectory.empty()) {
+    //         GeneralUtils::printError("Empty path!");
+    //         continue;
+    //     }
+    //     if (session.setOutputDirectory(outputDirectory)) break;
+    //     GeneralUtils::printError("Invalid path!");
+    // }
     session.printSession();
 }
 
@@ -378,6 +586,8 @@ int runYtdlp(Session& currentSession) {
         promptValidYtdlpPath(currentSession.loadedConfig);
 
     promptSessionMode(currentSession);
+    promptInputLink(currentSession);
+    promptOutput(currentSession);
 
     return 0;
 }
