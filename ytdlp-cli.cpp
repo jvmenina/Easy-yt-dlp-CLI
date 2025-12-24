@@ -33,44 +33,71 @@ namespace Constants {
  */
 
 namespace Filename {
-    const std::string filenameFormatIDs {"tuwc"};
-    enum class FilenameFormatTypes {
+    enum class FormatTypes {
         NONE,
         TITLE_AND_ID,
         UPLOADER_AND_ID,
         WEBSITE_AND_ID,
         CUSTOM
     };
-    FilenameFormatTypes charToFilenameFormatType(const char& ch) {
-        if (ch == filenameFormatIDs[1])
-            return FilenameFormatTypes::UPLOADER_AND_ID;
-        else if (ch == filenameFormatIDs[2])
-            return FilenameFormatTypes::WEBSITE_AND_ID;
-        else if (ch == filenameFormatIDs[3])
-            return FilenameFormatTypes::CUSTOM;
-        else
-            return FilenameFormatTypes::TITLE_AND_ID;
-    };
 
-    struct FilenameFormat {
+    struct Format {
+        char id;
         std::string name;
         std::string format;
-        FilenameFormat(const std::string& name, const std::string& format):
+
+        Format(const char& id, const std::string& name, const std::string& format):
+            id {id},
             name {name},
             format {format}
         {}
     };
 
-    const std::map<FilenameFormatTypes, FilenameFormat> filenameFormats {
-        {FilenameFormatTypes::TITLE_AND_ID, FilenameFormat{"Title and ID", "%(title)s - %(id)s.%(ext)s"}},
-        {FilenameFormatTypes::UPLOADER_AND_ID, FilenameFormat{"Uploader and ID", "%(uploader)s - %(id)s.%(ext)s"}},
-        {FilenameFormatTypes::WEBSITE_AND_ID, FilenameFormat{"Website and ID", "%(webpage_url_domain)s - %(id)s.%(ext)s"}},
-        {FilenameFormatTypes::CUSTOM, FilenameFormat{"Custom", ".%(ext)s"}}
+    class FFTS {
+        const std::map<FormatTypes, Format> typeToFormat;
+        const std::map<char, FormatTypes> charToType;
+
+        FFTS(const std::map<FormatTypes, Format>& names, const std::map<char, FormatTypes>& details)
+            : typeToFormat {std::move(names)}
+            , charToType {std::move(details)}
+        {}
+    
+    public:
+        static FFTS makeFFTS(std::initializer_list<std::pair<FormatTypes, Format>> list) {
+            std::map<FormatTypes, Format> typeToFormat;
+            std::map<char, FormatTypes> charToType;
+            for (auto i : list) {
+                typeToFormat.insert({i.first, i.second});
+                charToType.insert({i.second.id, i.first});
+            }
+            return FFTS {typeToFormat, charToType};
+        }
+
+        FormatTypes charToFilenameFormatType(const char& ch) const {
+            return charToType.at(ch);
+        }
+
+        Format getFormat(FormatTypes type) const {
+            return typeToFormat.at(type);
+        }
+
+        std::vector<Format> getFormats() const {
+            std::vector<Format> out {};
+            for (auto i : typeToFormat) out.push_back(i.second);
+            return std::move(out);
+        }
     };
+
+    const FFTS filenameFormats {FFTS::makeFFTS({
+        {FormatTypes::TITLE_AND_ID, Format{'t', "Title and ID", "%(title)s - %(id)s.%(ext)s"}},
+        {FormatTypes::UPLOADER_AND_ID, Format{'u', "Uploader and ID", "%(uploader)s - %(id)s.%(ext)s"}},
+        {FormatTypes::WEBSITE_AND_ID, Format{'w', "Website and ID", "%(webpage_url_domain)s - %(id)s.%(ext)s"}},
+        {FormatTypes::CUSTOM, Format{'c', "Custom", ".%(ext)s"}}
+    })};
 }
 
 namespace Download {
-    enum class DownloadMode {
+    enum class Mode {
         AS_VIDEO,
         AS_AUDIO
     };
@@ -86,16 +113,16 @@ namespace Download {
     const std::string VideoBestMp4Option {"-f \"bv*[ext=mp4]+ba[ext=m4a] / b[ext=mp4]\""};
     const std::string VideoCustomOption {"-S \"res:"};
 
-    DownloadMode inputToDownloadMode(const char& input) {
+    Mode charToDownloadMode(const char& input) {
         switch (input) {
             case '2':
-                return DownloadMode::AS_AUDIO;
+                return Mode::AS_AUDIO;
             default:
-                return DownloadMode::AS_VIDEO;
+                return Mode::AS_VIDEO;
         }
     }
 
-    VideoOptions inputToVideoOption(const char& input) {
+    VideoOptions charToVideoOption(const char& input) {
         switch (input) {
             case '2':
                 return VideoOptions::BEST_MP4;
@@ -106,8 +133,8 @@ namespace Download {
         }
     }
 
-    const std::string& getDownloadOptions(const DownloadMode& mode, const VideoOptions& videoOption = VideoOptions::BEST_ANY) {
-        if (mode == DownloadMode::AS_AUDIO) {
+    const std::string& getDownloadOptions(const Mode& mode, const VideoOptions& videoOption = VideoOptions::BEST_ANY) {
+        if (mode == Mode::AS_AUDIO) {
             return AudioOption;
         } else if (videoOption == VideoOptions::BEST_MP4) {
             return VideoBestMp4Option;
@@ -118,12 +145,12 @@ namespace Download {
         }
     }
 
-    std::ostream& operator<<(std::ostream& out, Download::DownloadMode downloadMode) {
+    std::ostream& operator<<(std::ostream& out, Download::Mode downloadMode) {
         switch (downloadMode) {
-            case Download::DownloadMode::AS_VIDEO:
+            case Download::Mode::AS_VIDEO:
                 out << "AS VIDEO";
                 break;
-            case Download::DownloadMode::AS_AUDIO:
+            case Download::Mode::AS_AUDIO:
                 out << "AS AUDIO";
                 break;
             default:
@@ -473,9 +500,9 @@ struct Session {
     LoadedConfig& loadedConfig;
     std::string inputLink {};
     std::string outputDirectory {};
-    Filename::FilenameFormatTypes outputFilenameFormatType {Filename::FilenameFormatTypes::NONE};
+    Filename::FormatTypes outputFilenameFormatType {Filename::FormatTypes::NONE};
     std::string outputFilename {};
-    Download::DownloadMode downloadMode {Download::DownloadMode::AS_VIDEO};
+    Download::Mode downloadMode {Download::Mode::AS_VIDEO};
     std::string downloadModeOptions {};
 
     /**
@@ -511,8 +538,8 @@ struct Session {
     }
 
     void setFilenameFormat(const char& format) {
-        this->outputFilenameFormatType = Filename::charToFilenameFormatType(format);
-        this->outputFilename = Filename::filenameFormats.at(this->outputFilenameFormatType).format;
+        this->outputFilenameFormatType = Filename::filenameFormats.charToFilenameFormatType(format);
+        this->outputFilename = Filename::filenameFormats.getFormat(this->outputFilenameFormatType).format;
         Utils::Printers::printLog("Updated output filename format.");
     }
 
@@ -522,15 +549,15 @@ struct Session {
     }
 
     void setDownloadMode(const char& mode) {
-        this->downloadMode = Download::inputToDownloadMode(mode);
+        this->downloadMode = Download::charToDownloadMode(mode);
         Utils::Printers::printLog("Updated download mode.");
     }
 
     void setDownloadOptions(const char& mode = 0) {
-        if (this->downloadMode == Download::DownloadMode::AS_AUDIO) {
+        if (this->downloadMode == Download::Mode::AS_AUDIO) {
             this->downloadModeOptions = Download::getDownloadOptions(this->downloadMode);
         } else {
-            this->downloadModeOptions = Download::getDownloadOptions(this->downloadMode, Download::inputToVideoOption(mode));
+            this->downloadModeOptions = Download::getDownloadOptions(this->downloadMode, Download::charToVideoOption(mode));
         }
         Utils::Printers::printLog("Updated download options.");
     }
@@ -560,9 +587,9 @@ struct Session {
     void reset() {
         doUpdate = false;
         inputLink = "";
-        outputFilenameFormatType = {Filename::FilenameFormatTypes::NONE};
+        outputFilenameFormatType = {Filename::FormatTypes::NONE};
         outputFilename = "";
-        downloadMode = {Download::DownloadMode::AS_VIDEO};
+        downloadMode = {Download::Mode::AS_VIDEO};
         downloadModeOptions = "";
     }
 
@@ -675,11 +702,11 @@ void promptFilename(Session& session) {
     char outputFilenameFormat {};
     std::string prompt {"Output filename format ("};
     bool firstPrint {true};
-    for (const char& i : Filename::filenameFormatIDs) {
+    for (const Filename::Format& i : Filename::filenameFormats.getFormats()) {
         if (!firstPrint) prompt += " | ";
         firstPrint = false;
-        prompt += "[" + std::string{i};
-        prompt += "]" + Filename::filenameFormats.at(Filename::charToFilenameFormatType(i)).name;
+        prompt += "[" + std::string{i.id};
+        prompt += "]" + i.name;
     }
     prompt += "):";
     Utils::Inputs::askInputWithCheck(
@@ -692,7 +719,7 @@ void promptFilename(Session& session) {
     session.setFilenameFormat(outputFilenameFormat);
 
     std::string filename {};
-    if (session.outputFilenameFormatType == Filename::FilenameFormatTypes::CUSTOM) {
+    if (session.outputFilenameFormatType == Filename::FormatTypes::CUSTOM) {
         Utils::Inputs::askInputWithCheck(
             filename,
             "Output custom filename:",
@@ -716,7 +743,7 @@ void promptDownloadMode(Session& session) {
     );
     session.setDownloadMode(mode);
 
-    if (session.downloadMode == Download::DownloadMode::AS_VIDEO) {
+    if (session.downloadMode == Download::Mode::AS_VIDEO) {
         Utils::Inputs::askInputWithCheck(
             mode,
             "Input download mode ([1] Any Best (DEFAULT) | [2] Best MP4 | [3] Custom ):",
