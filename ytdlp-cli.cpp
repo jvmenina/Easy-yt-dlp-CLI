@@ -237,6 +237,13 @@ namespace Utils {
             return path.length() < PATH_MAX && std::filesystem::is_regular_file(path);
         }
 
+        bool isValidFilenameFormatInput (const char& input) {
+            for (const Filename::Format& i : Filename::filenameFormats.getFormats()) {
+                if (i.id == input) return true;
+            }
+            return false;
+        }
+
         bool isValidDirectory(const std::string& path) {
             return path.length() < PATH_MAX && std::filesystem::is_directory(path);
         }
@@ -364,7 +371,7 @@ namespace Utils {
         void askInputWithCheck(
             char& dest, 
             const std::string& prompt,
-            bool (*const validatorFcn)(char&),
+            bool (*const validatorFcn)(const char&),
             const std::string& messageIfInvalid,
             bool toLower = false
         ) {
@@ -666,6 +673,7 @@ void promptInputLink(Session& session) {
         "Empty link!",
         {Utils::Inputs::InputPostProcess::STRIP}
     );
+    std::system("clear");
     session.setInputLink(inputLink);
     session.printSession();
 }
@@ -694,6 +702,7 @@ void promptOutputDirectory(Session& session) {
         "Empty path!",
         {Utils::Inputs::InputPostProcess::STRIP}
     );
+    std::system("clear");
     session.setOutputDirectory(outputDirectory);
     session.printSession();
 }
@@ -712,8 +721,8 @@ void promptFilename(Session& session) {
     Utils::Inputs::askInputWithCheck(
         outputFilenameFormat,
         prompt,
-        nullptr,
-        "",
+        &Utils::Validators::isValidFilenameFormatInput,
+        "Invalid input!",
         true
     );
     session.setFilenameFormat(outputFilenameFormat);
@@ -728,7 +737,10 @@ void promptFilename(Session& session) {
             "Empty filename!",
             {Utils::Inputs::InputPostProcess::STRIP}
         );
+        std::system("clear");
         session.setFilenameOnly(filename);
+    } else {
+        std::system("clear");
     }
     session.printSession();
 }
@@ -741,6 +753,7 @@ void promptDownloadMode(Session& session) {
         nullptr,
         ""
     );
+    std::system("clear");
     session.setDownloadMode(mode);
 
     if (session.downloadMode == Download::Mode::AS_VIDEO) {
@@ -750,8 +763,10 @@ void promptDownloadMode(Session& session) {
             nullptr,
             ""
         );
+        std::system("clear");
         session.setDownloadOptions(mode);
     } else {
+        std::system("clear");
         session.setDownloadOptions();
     }
 
@@ -765,7 +780,10 @@ void promptDownloadMode(Session& session) {
             "Empty resolution!",
             {Utils::Inputs::InputPostProcess::STRIP}
         );
+        std::system("clear");
         session.setCustomDownloadOption(options);
+    } else {
+        std::system("clear");
     }
     session.printSession();
 }
@@ -815,6 +833,7 @@ int runYtdlp(Session& currentSession) {
 
         confirmDownload(fullCommand);
         currentSession.reset();
+        std::system("clear");
     }
 
     return 0;

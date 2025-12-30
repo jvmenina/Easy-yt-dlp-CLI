@@ -6,6 +6,7 @@
 1. Acquire a C++ compiler via the GNU compiler toolkit (GCC)
     - [Windows Instructions](https://code.visualstudio.com/docs/cpp/config-mingw)
     - [Linux Instructions](https://code.visualstudio.com/docs/cpp/config-linux)
-2. Run the following: 
+2. Acquire a copy of the **Python** version of [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+3. Run the following: 
     1. `g++ ytdlp-cli.cpp -o ytdlp-cli`
     2. `./ytdlp-cli`
