@@ -38,12 +38,13 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        platform: [Linux, Windows]
         include:
           - os: ubuntu-latest
+            platform: Linux
             asset_suffix: '-linux'
             asset_ext: ''
           - os: windows-latest
+            platform: Windows
             asset_suffix: '-windows-x64'
             asset_ext: '.exe'
 
