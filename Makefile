@@ -6,9 +6,11 @@ COMPILER = g++
 COMPILERFLAGS = -std=c++17 -O2
 
 # Target executable name
-TARGET = easy_ytdlp_cli
+TARGET ?= easy_ytdlp_cli
 ifeq ($(OS),Windows_NT)
-	TARGET := $(TARGET).exe
+	ifneq ($(suffix $(TARGET)),.exe)
+		TARGET := $(TARGET:.exe=).exe
+	endif
 endif
 
 # Source files
